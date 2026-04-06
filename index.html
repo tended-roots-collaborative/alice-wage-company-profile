@@ -354,5 +354,37 @@ function exportCSVSummary(){if(!data)return;const m=data.filter(r=>r._threshold)
 function resetApp(){charts.forEach(c=>c.destroy());charts=[];data=null;document.getElementById('dashboard').classList.remove('visible');
   document.getElementById('chartGrid').innerHTML='';document.getElementById('statsRow').innerHTML='';st.style.display='none';fi.value='';window.scrollTo({top:0,behavior:'smooth'});}
 </script>
+<script>
+// Notify parent (Squarespace) of content height for seamless iframe resizing
+function notifyParent(){
+  var h = Math.max(
+    document.body.scrollHeight,
+    document.body.offsetHeight,
+    document.documentElement.scrollHeight,
+    document.documentElement.offsetHeight
+  );
+  window.parent.postMessage({type:'resize',height:h},'*');
+}
+// Fire on load
+window.addEventListener('load', function(){
+  notifyParent();
+  // Fire repeatedly during first 10 seconds to catch chart rendering
+  var count = 0;
+  var interval = setInterval(function(){
+    notifyParent();
+    count++;
+    if(count > 20) clearInterval(interval);
+  }, 500);
+});
+// Fire on any DOM change
+new MutationObserver(function(){
+  // Small delay to let rendering finish
+  setTimeout(notifyParent, 100);
+  setTimeout(notifyParent, 500);
+  setTimeout(notifyParent, 1500);
+}).observe(document.body,{childList:true,subtree:true,attributes:true});
+// Fire on window resize
+window.addEventListener('resize', notifyParent);
+</script>
 </body>
 </html>
