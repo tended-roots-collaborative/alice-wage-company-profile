@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALICE@Work Data Visualizer — Minnesota</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1222;
+    --surface: #131D33;
+    --surface-alt: #1A2744;
+    --border: #243352;
+    --text: #E8ECF4;
+    --text-muted: #8A95AB;
+    --accent: #2563EB;
+    --accent-glow: rgba(37, 99, 235, 0.25);
+    --alice-blue: #1B6CB0;
+    --alice-dark: #0D3B66;
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --success: #10B981;
+    --purple: #8B5CF6;
+    --pink: #EC4899;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  body::before { content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(ellipse at 20% 20%, rgba(37,99,235,0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(27,108,176,0.04) 0%, transparent 50%);
+    z-index: 0; pointer-events: none; }
+  .container { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+  /* Header */
+  .header { text-align: center; padding: 3rem 0 2rem; }
+  .header-badge { display: inline-block; padding: 0.35rem 1rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 100px; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 1rem; }
+  .header h1 { font-family: 'Playfair Display', serif; font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; line-height: 1.1; margin-bottom: 0.75rem;
+    background: linear-gradient(135deg, #E8ECF4 0%, #8A95AB 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header p { color: var(--text-muted); font-size: 1.05rem; max-width: 640px; margin: 0 auto; line-height: 1.6; }
+
+  /* Company Name Input */
+  .company-input { max-width: 480px; margin: 1.5rem auto 0; }
+  .company-input label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-bottom: 0.4rem; }
+  .company-input input { width: 100%; padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); font-family: 'DM Sans'; font-size: 1rem; outline: none; transition: border-color 0.2s; }
+  .company-input input:focus { border-color: var(--accent); }
+
+  /* Upload */
+  .upload-zone { margin: 1.5rem auto; max-width: 640px; border: 2px dashed var(--border); border-radius: 16px;
+    padding: 2.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s; background: var(--surface); position: relative; overflow: hidden; }
+  .upload-zone::before { content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(37,99,235,0.03), rgba(27,108,176,0.03)); opacity: 0; transition: opacity 0.3s; }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); box-shadow: 0 0 40px var(--accent-glow); }
+  .upload-zone:hover::before, .upload-zone.drag-over::before { opacity: 1; }
+  .upload-icon { width: 56px; height: 56px; margin: 0 auto 1rem; border-radius: 14px; background: var(--surface-alt);
+    display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
+  .upload-zone h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.4rem; }
+  .upload-zone p { color: var(--text-muted); font-size: 0.85rem; }
+  .upload-zone input { display: none; }
+
+  /* Format */
+  .format-info { max-width: 640px; margin: 0.75rem auto 1.5rem; padding: 1rem 1.25rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; }
+  .format-info strong { color: var(--text); display: block; margin-bottom: 0.25rem; }
+  .format-info code { background: var(--surface-alt); padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem; color: var(--accent); }
+
+  /* Status */
+  .status { text-align: center; padding: 0.85rem; border-radius: 10px; margin: 0.75rem auto; max-width: 640px; font-size: 0.88rem; display: none; }
+  .status.error { display: block; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #FCA5A5; }
+  .status.success { display: block; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #6EE7B7; }
+
+  /* Dashboard */
+  .dashboard { display: none; margin-top: 2rem; animation: fadeUp 0.6s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .dashboard.visible { display: block; }
+
+  /* Section Headers */
+  .section-header { font-family: 'Playfair Display', serif; font-size: 1.4rem; font-weight: 700; margin: 2rem 0 0.5rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--alice-blue); }
+  .section-desc { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem; line-height: 1.5; }
+
+  /* Stats Row */
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; text-align: center; }
+  .stat-card .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 0.4rem; }
+  .stat-card .value { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 700; }
+  .stat-card .value.blue { color: var(--accent); }
+  .stat-card .value.green { color: var(--success); }
+  .stat-card .value.yellow { color: var(--warning); }
+  .stat-card .value.red { color: var(--danger); }
+  .stat-card .value.purple { color: var(--purple); }
+
+  /* Data Tables */
+  .data-table-wrap { overflow-x: auto; margin-bottom: 1.5rem; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .data-table thead { background: var(--alice-blue); }
+  .data-table th { padding: 0.7rem 0.8rem; text-align: left; font-weight: 600; color: white; font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+  .data-table td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+  .data-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  .data-table .indent { padding-left: 1.6rem; }
+  .data-table .group-header { font-weight: 600; color: var(--text); background: var(--surface-alt); }
+
+  /* Chart Grid */
+  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+  @media (max-width: 560px) { .chart-grid { grid-template-columns: 1fr; } }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; }
+  .chart-card h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.2rem; }
+  .chart-card .subtitle { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+  .chart-card.full-width { grid-column: 1 / -1; }
+
+  /* Export */
+  .export-bar { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; margin: 2rem 0 3rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.4rem; border-radius: 10px;
+    font-family: 'DM Sans'; font-size: 0.88rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 4px 16px var(--accent-glow); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px var(--accent-glow); }
+  .btn-secondary { background: var(--surface-alt); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-reset { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+  .btn-reset:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* Loading */
+  .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(11,18,34,0.85); z-index: 100;
+    align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
+  .loading-overlay.visible { display: flex; }
+  .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay p { color: var(--text-muted); font-size: 0.9rem; }
+
+  .footer { text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.78rem; border-top: 1px solid var(--border); margin-top: 2rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <p id="loadingMsg">Generating report...</p>
+</div>
+
+<div class="container">
+  <div class="header">
+    <div class="header-badge">ALICE@Work — Minnesota</div>
+    <h1>Wage Data Visualizer</h1>
+    <p>Upload your employee wage data and instantly generate an ALICE@Work report using real 2023 ALICE Threshold data for every Minnesota county. Your data never leaves your browser.</p>
+  </div>
+
+  <div class="company-input">
+    <label>Company / Organization Name</label>
+    <input type="text" id="companyName" placeholder="e.g. ABC Company" value="">
+  </div>
+
+  <div class="upload-zone" id="uploadZone">
+    <div class="upload-icon">📊</div>
+    <h3>Drop your employee data spreadsheet here</h3>
+    <p>Accepts .xlsx, .xls, or .csv &mdash; click or drag to upload</p>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+  </div>
+
+  <div class="format-info">
+    <strong>Required Columns</strong>
+    <code>employee_id</code> <code>county</code> <code>state</code> <code>annual_salary</code>
+    <code>hourly_wage</code> <code>fte_status</code> <code>hours_per_week</code>
+    <code>sex</code> <code>age_group</code> <code>race_ethnicity</code>
+    <code>marital_status</code> <code>tenure_group</code> <code>eeoc_category</code> <code>job_title</code><br>
+    County names should match Minnesota counties (e.g. "Hennepin County" or "Hennepin").
+    The ALICE Threshold used is for households under 65 in each county.
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <!-- ═══════════════ REPORT DASHBOARD ═══════════════ -->
+  <div class="dashboard" id="dashboard">
+
+    <div id="reportContent">
+
+    <!-- Section 1: Does ALICE Work Here? -->
+    <div class="section-header">Does ALICE Work at <span class="co-name">Your Company</span>?</div>
+    <div class="section-desc" id="aliceSummaryText"></div>
+    <div class="stats-row" id="statsRow"></div>
+
+    <!-- Table 1: Employment, Wage, Percentage -->
+    <div class="data-table-wrap" id="table1Wrap"></div>
+
+    <!-- Section 2: Household Survival Budget -->
+    <div class="section-header">Household Survival Budget Analysis</div>
+    <div class="section-desc">Comparing employee wages against three ALICE Household Survival Budget types shows what percentage of jobs can support each household configuration in the employee's county.</div>
+    <div class="stats-row" id="hhBudgetStats"></div>
+
+    <!-- Section 3: Demographics -->
+    <div class="section-header">Demographic Characteristics of Employees</div>
+    <div class="section-desc">Breakdown by demographic group showing total employees, percentage below the ALICE Threshold, and median salaries for employees above and below the threshold.</div>
+    <div class="data-table-wrap" id="table3Wrap"></div>
+
+    <!-- Section 4: Tenure -->
+    <div class="section-header">Employees by Tenure</div>
+    <div class="section-desc">Financial hardship rates by length of employment, with median salary comparisons.</div>
+    <div class="data-table-wrap" id="table4Wrap"></div>
+
+    <!-- Section 5: EEOC Job Categories -->
+    <div class="section-header">Employment by EEOC Job Category</div>
+    <div class="section-desc">Median hourly wages and percentage below the ALICE Threshold by EEOC occupation category.</div>
+    <div class="data-table-wrap" id="table6Wrap"></div>
+
+    <!-- Charts -->
+    <div class="section-header">Visual Analysis</div>
+    <div class="chart-grid" id="chartGrid"></div>
+
+    </div><!-- /reportContent -->
+
+    <!-- Export -->
+    <div class="export-bar">
+      <button class="btn btn-primary" onclick="exportPDF()">⬇ Download Full Report (PDF)</button>
+      <button class="btn btn-secondary" onclick="exportAllPNG()">🖼 Download Charts (PNG)</button>
+      <button class="btn btn-secondary" onclick="exportCSVSummary()">📄 Download Summary (CSV)</button>
+      <button class="btn btn-reset" onclick="resetApp()">✕ Clear &amp; Start Over</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    All data is processed entirely in your browser. Nothing is uploaded to any server.<br>
+    ALICE Threshold data: 2023 United For ALICE Minnesota Data Sheet — unitedforalice.org<br>
+    ALICE status based on household with one adult, under 65, unless otherwise noted.
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// 2023 ALICE Thresholds for all 87 MN Counties
+// u65 = threshold for HH under 65
+// o65 = threshold for HH 65+
+// hh/pov/alice/above = household counts
+// ══════════════════════════════════════════════
+const ALICE_MN = {"Aitkin":{"u65":56181,"o65":49944,"hh":6935,"pov":897,"alice":2171,"above":3867},"Anoka":{"u65":72305,"o65":61884,"hh":138924,"pov":9559,"alice":36864,"above":92501},"Becker":{"u65":56221,"o65":49389,"hh":14404,"pov":1565,"alice":3741,"above":9098},"Beltrami":{"u65":58239,"o65":51792,"hh":17908,"pov":2505,"alice":4865,"above":10538},"Benton":{"u65":60027,"o65":59088,"hh":16494,"pov":1741,"alice":5374,"above":9379},"Big Stone":{"u65":51470,"o65":49548,"hh":2179,"pov":250,"alice":631,"above":1298},"Blue Earth":{"u65":58350,"o65":54768,"hh":27037,"pov":4462,"alice":6546,"above":16029},"Brown":{"u65":50566,"o65":47221,"hh":10946,"pov":998,"alice":2552,"above":7396},"Carlton":{"u65":59895,"o65":54156,"hh":13972,"pov":1233,"alice":3509,"above":9230},"Carver":{"u65":72564,"o65":64800,"hh":42250,"pov":2100,"alice":9385,"above":30765},"Cass":{"u65":57862,"o65":50947,"hh":12768,"pov":1599,"alice":3599,"above":7570},"Chippewa":{"u65":50876,"o65":48072,"hh":5196,"pov":696,"alice":1199,"above":3301},"Chisago":{"u65":77114,"o65":65436,"hh":21252,"pov":1381,"alice":6168,"above":13703},"Clay":{"u65":54627,"o65":50278,"hh":26890,"pov":3829,"alice":5958,"above":17103},"Clearwater":{"u65":57835,"o65":51180,"hh":3245,"pov":462,"alice":893,"above":1890},"Cook":{"u65":51099,"o65":48129,"hh":2700,"pov":239,"alice":473,"above":1988},"Cottonwood":{"u65":51308,"o65":51516,"hh":4659,"pov":637,"alice":1166,"above":2856},"Crow Wing":{"u65":52516,"o65":52572,"hh":31463,"pov":3403,"alice":7283,"above":20777},"Dakota":{"u65":69297,"o65":63276,"hh":176865,"pov":10680,"alice":44186,"above":121999},"Dodge":{"u65":64391,"o65":59532,"hh":8018,"pov":456,"alice":2019,"above":5543},"Douglas":{"u65":48676,"o65":50704,"hh":17416,"pov":1691,"alice":3586,"above":12139},"Faribault":{"u65":48108,"o65":48484,"hh":6170,"pov":818,"alice":1410,"above":3942},"Fillmore":{"u65":57047,"o65":53460,"hh":8626,"pov":753,"alice":2339,"above":5534},"Freeborn":{"u65":54233,"o65":49531,"hh":12885,"pov":1290,"alice":3611,"above":7984},"Goodhue":{"u65":54770,"o65":53076,"hh":19631,"pov":2119,"alice":4286,"above":13226},"Grant":{"u65":53030,"o65":50117,"hh":2521,"pov":274,"alice":645,"above":1602},"Hennepin":{"u65":63263,"o65":64068,"hh":545627,"pov":56033,"alice":127797,"above":361797},"Houston":{"u65":55176,"o65":52315,"hh":8074,"pov":685,"alice":1928,"above":5461},"Hubbard":{"u65":56509,"o65":50208,"hh":8885,"pov":1055,"alice":2215,"above":5615},"Isanti":{"u65":69300,"o65":59352,"hh":15875,"pov":1228,"alice":4677,"above":9970},"Itasca":{"u65":56106,"o65":51288,"hh":18510,"pov":2383,"alice":5028,"above":11099},"Jackson":{"u65":46823,"o65":46482,"hh":4421,"pov":434,"alice":998,"above":2989},"Kanabec":{"u65":57028,"o65":52200,"hh":6475,"pov":610,"alice":1792,"above":4073},"Kandiyohi":{"u65":54138,"o65":50496,"hh":17450,"pov":1844,"alice":3945,"above":11661},"Kittson":{"u65":49937,"o65":49680,"hh":1758,"pov":177,"alice":428,"above":1153},"Koochiching":{"u65":46424,"o65":47949,"hh":5710,"pov":550,"alice":1268,"above":3892},"Lac qui Parle":{"u65":49979,"o65":50112,"hh":2881,"pov":279,"alice":698,"above":1904},"Lake":{"u65":51083,"o65":52216,"hh":5030,"pov":509,"alice":1122,"above":3399},"Lake of the Woods":{"u65":49888,"o65":51479,"hh":1665,"pov":152,"alice":456,"above":1057},"Le Sueur":{"u65":62976,"o65":57984,"hh":11499,"pov":906,"alice":2931,"above":7662},"Lincoln":{"u65":48960,"o65":48221,"hh":2435,"pov":274,"alice":568,"above":1593},"Lyon":{"u65":53372,"o65":47523,"hh":10003,"pov":1364,"alice":2327,"above":6312},"McLeod":{"u65":53032,"o65":51108,"hh":14971,"pov":1292,"alice":3355,"above":10324},"Mahnomen":{"u65":65579,"o65":47792,"hh":1871,"pov":360,"alice":661,"above":850},"Marshall":{"u65":51542,"o65":51743,"hh":3740,"pov":277,"alice":940,"above":2523},"Martin":{"u65":49769,"o65":47849,"hh":8840,"pov":1006,"alice":2250,"above":5584},"Meeker":{"u65":56684,"o65":51012,"hh":9141,"pov":749,"alice":2560,"above":5832},"Mille Lacs":{"u65":57098,"o65":54360,"hh":10739,"pov":1202,"alice":3020,"above":6517},"Morrison":{"u65":52251,"o65":49968,"hh":13860,"pov":1496,"alice":3851,"above":8513},"Mower":{"u65":57264,"o65":50920,"hh":15570,"pov":1732,"alice":4130,"above":9708},"Murray":{"u65":48120,"o65":47439,"hh":3601,"pov":334,"alice":807,"above":2460},"Nicollet":{"u65":65180,"o65":57708,"hh":12984,"pov":1231,"alice":3854,"above":7899},"Nobles":{"u65":62234,"o65":50196,"hh":7689,"pov":1002,"alice":2351,"above":4336},"Norman":{"u65":52358,"o65":49468,"hh":2676,"pov":288,"alice":656,"above":1732},"Olmsted":{"u65":61648,"o65":59232,"hh":66425,"pov":5830,"alice":16309,"above":44286},"Otter Tail":{"u65":51977,"o65":49008,"hh":25181,"pov":2655,"alice":6410,"above":16116},"Pennington":{"u65":49050,"o65":50033,"hh":6170,"pov":606,"alice":1419,"above":4145},"Pine":{"u65":57948,"o65":52272,"hh":11913,"pov":1381,"alice":3431,"above":7101},"Pipestone":{"u65":50629,"o65":50214,"hh":3971,"pov":470,"alice":1024,"above":2477},"Polk":{"u65":53301,"o65":52020,"hh":12448,"pov":1600,"alice":3296,"above":7552},"Pope":{"u65":52074,"o65":51022,"hh":4987,"pov":570,"alice":1179,"above":3238},"Ramsey":{"u65":63646,"o65":62085,"hh":225183,"pov":24149,"alice":64625,"above":136409},"Red Lake":{"u65":53825,"o65":45913,"hh":1650,"pov":160,"alice":370,"above":1120},"Redwood":{"u65":54631,"o65":48081,"hh":6156,"pov":822,"alice":1562,"above":3772},"Renville":{"u65":51706,"o65":52740,"hh":5965,"pov":665,"alice":1494,"above":3806},"Rice":{"u65":71946,"o65":54108,"hh":23345,"pov":2188,"alice":7126,"above":14031},"Rock":{"u65":51689,"o65":51000,"hh":3956,"pov":411,"alice":940,"above":2605},"Roseau":{"u65":54827,"o65":49297,"hh":6058,"pov":723,"alice":1440,"above":3895},"St. Louis":{"u65":54024,"o65":53244,"hh":87576,"pov":11852,"alice":23200,"above":52524},"Scott":{"u65":76308,"o65":63204,"hh":54238,"pov":2353,"alice":12112,"above":39773},"Sherburne":{"u65":74958,"o65":61140,"hh":34951,"pov":2128,"alice":9618,"above":23205},"Sibley":{"u65":56892,"o65":47025,"hh":5884,"pov":602,"alice":1329,"above":3953},"Stearns":{"u65":59697,"o65":52128,"hh":60666,"pov":7071,"alice":15327,"above":38268},"Steele":{"u65":55989,"o65":51996,"hh":15001,"pov":1194,"alice":3607,"above":10200},"Stevens":{"u65":53202,"o65":52127,"hh":3835,"pov":496,"alice":903,"above":2436},"Swift":{"u65":51840,"o65":47016,"hh":4134,"pov":469,"alice":1164,"above":2501},"Todd":{"u65":58110,"o65":51751,"hh":10049,"pov":1166,"alice":3167,"above":5716},"Traverse":{"u65":50370,"o65":51837,"hh":1410,"pov":169,"alice":368,"above":873},"Wabasha":{"u65":53624,"o65":54057,"hh":9129,"pov":852,"alice":2149,"above":6128},"Wadena":{"u65":50981,"o65":50600,"hh":5889,"pov":739,"alice":1793,"above":3357},"Waseca":{"u65":54463,"o65":51228,"hh":7505,"pov":638,"alice":2168,"above":4699},"Washington":{"u65":74035,"o65":65184,"hh":109093,"pov":5207,"alice":25093,"above":78793},"Watonwan":{"u65":56300,"o65":48762,"hh":4314,"pov":509,"alice":1081,"above":2724},"Wilkin":{"u65":47177,"o65":49236,"hh":2691,"pov":393,"alice":470,"above":1828},"Winona":{"u65":53649,"o65":50133,"hh":20288,"pov":2670,"alice":5126,"above":12492},"Wright":{"u65":71084,"o65":62064,"hh":55367,"pov":3109,"alice":13439,"above":38819},"Yellow Medicine":{"u65":49818,"o65":49510,"hh":3993,"pov":331,"alice":905,"above":2757}};
+
+// Household budget multipliers (approx based on ALICE methodology)
+// Single adult = u65 threshold
+// 1 adult + 1 child ≈ 1.35x single adult
+// Family of 4 (2 adults + 2 children) ≈ 1.85x single adult
+const HH_MULT = { single: 1.0, oneChild: 1.35, family4: 1.85 };
+
+// MN statewide stats (computed from ALICE data)
+const MN_STATE = (() => {
+  let totalHH = 0, totalPov = 0, totalAlice = 0, totalAbove = 0;
+  Object.values(ALICE_MN).forEach(c => { totalHH += c.hh; totalPov += c.pov; totalAlice += c.alice; totalAbove += c.above; });
+  return { hh: totalHH, pov: totalPov, alice: totalAlice, above: totalAbove,
+    pctBelow: Math.round((totalPov + totalAlice) / totalHH * 100) };
+})();
+
+// ── State ──
+let data = null;
+let charts = [];
+
+function getCompanyName() { return document.getElementById('companyName').value.trim() || 'Your Company'; }
+function cleanCounty(c) { return (c || '').replace(/\s*County\s*$/i, '').trim(); }
+
+function getThreshold(county, ageGroup) {
+  const c = cleanCounty(county);
+  const rec = ALICE_MN[c];
+  if (!rec) return null;
+  if (ageGroup && ageGroup.includes('65+')) return rec.o65;
+  return rec.u65;
+}
+
+// ── Upload ──
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv','xlsx','xls'].includes(ext)) { showStatus('Please upload a .csv, .xlsx, or .xls file.', 'error'); return; }
+  showLoading(true, 'Reading file...');
+  statusEl.style.display = 'none';
+  if (ext === 'csv') {
+    Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true,
+      complete: r => processData(r.data), error: e => { showStatus('CSV error: ' + e.message, 'error'); showLoading(false); } });
+  } else {
+    const reader = new FileReader();
+    reader.onload = e => { try {
+      const wb = XLSX.read(e.target.result, { type: 'array' }); const ws = wb.Sheets[wb.SheetNames[0]];
+      processData(XLSX.utils.sheet_to_json(ws));
+    } catch(e) { showStatus('Error: ' + e.message, 'error'); showLoading(false); } };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+const REQUIRED = ['county','annual_salary','hourly_wage','fte_status','sex','age_group','race_ethnicity','eeoc_category','tenure_group'];
+
+function processData(raw) {
+  if (!raw || !raw.length) { showStatus('File is empty.', 'error'); showLoading(false); return; }
+  const cols = Object.keys(raw[0]).map(c => c.toLowerCase().trim());
+  const missing = REQUIRED.filter(r => !cols.includes(r));
+  if (missing.length) { showStatus('Missing columns: ' + missing.join(', '), 'error'); showLoading(false); return; }
+
+  showLoading(true, 'Matching to ALICE thresholds...');
+  data = raw.map(row => {
+    const r = {};
+    for (const [k, v] of Object.entries(row)) r[k.toLowerCase().trim()] = v;
+    r.annual_salary = parseFloat(r.annual_salary) || 0;
+    r.hourly_wage = parseFloat(r.hourly_wage) || 0;
+    r.hours_per_week = parseFloat(r.hours_per_week) || 0;
+    r._county = cleanCounty(r.county);
+    r._threshold = getThreshold(r.county, r.age_group);
+    r._belowALICE = r._threshold ? r.annual_salary < r._threshold : false;
+    return r;
+  });
+
+  // Check for unmatched counties
+  const unmatched = [...new Set(data.filter(r => !r._threshold).map(r => r._county))];
+  if (unmatched.length) {
+    showStatus(`Loaded ${data.length} records. Warning: ${unmatched.length} county names not matched to ALICE data: ${unmatched.join(', ')}. Those employees are excluded from ALICE analysis.`, 'success');
+  } else {
+    showStatus(`Successfully loaded ${data.length} employee records. All counties matched to ALICE thresholds.`, 'success');
+  }
+
+  showLoading(true, 'Generating report...');
+  setTimeout(() => {
+    document.querySelectorAll('.co-name').forEach(el => el.textContent = getCompanyName());
+    renderReport();
+    document.getElementById('dashboard').classList.add('visible');
+    showLoading(false);
+    setTimeout(() => document.getElementById('dashboard').scrollIntoView({ behavior: 'smooth' }), 200);
+  }, 100);
+}
+
+// ══════════════════════════════════════
+// REPORT GENERATION
+// ══════════════════════════════════════
+
+function renderReport() {
+  const matched = data.filter(r => r._threshold);
+  const n = matched.length;
+  const belowCount = matched.filter(r => r._belowALICE).length;
+  const belowPct = n ? Math.round(belowCount / n * 100) : 0;
+  const medianWage = median(matched.map(r => r.hourly_wage));
+  const co = getCompanyName();
+
+  // ── Summary Text ──
+  document.getElementById('aliceSummaryText').innerHTML =
+    `Analysis of ${co} employee data shows that <strong>${belowPct}%</strong> of employees are below the ALICE Threshold (poverty plus ALICE) based on the 2023 ALICE Household Survival Budget for the county where each employee lives. This is compared to <strong>${MN_STATE.pctBelow}%</strong> of all households statewide in Minnesota.`;
+
+  // ── Stats Row ──
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card"><div class="label">Total Employees</div><div class="value blue">${n.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="label">Median Hourly Wage</div><div class="value green">$${medianWage.toFixed(2)}</div></div>
+    <div class="stat-card"><div class="label">Below ALICE Threshold</div><div class="value red">${belowPct}%</div></div>
+    <div class="stat-card"><div class="label">MN Statewide Below</div><div class="value yellow">${MN_STATE.pctBelow}%</div></div>
+    <div class="stat-card"><div class="label">Counties Represented</div><div class="value purple">${new Set(matched.map(r=>r._county)).size}</div></div>
+  `;
+
+  // ── Table 1: Overview ──
+  document.getElementById('table1Wrap').innerHTML = buildTable(
+    'Employment, Wage, and Percentage Below ALICE Threshold',
+    ['','Total Employment','Median Hourly Wage','% Below ALICE Threshold'],
+    [
+      ['Minnesota (all HH)', MN_STATE.hh.toLocaleString(), '—', MN_STATE.pctBelow + '%'],
+      [co, n.toLocaleString(), '$' + medianWage.toFixed(2), belowPct + '%']
+    ]
+  );
+
+  // ── Household Survival Budget ──
+  const singlePct = n ? Math.round(matched.filter(r => r.annual_salary >= r._threshold * HH_MULT.single).length / n * 100) : 0;
+  const oneChildPct = n ? Math.round(matched.filter(r => r.annual_salary >= r._threshold * HH_MULT.oneChild).length / n * 100) : 0;
+  const fam4Pct = n ? Math.round(matched.filter(r => r.annual_salary >= r._threshold * HH_MULT.family4).length / n * 100) : 0;
+  document.getElementById('hhBudgetStats').innerHTML = `
+    <div class="stat-card"><div class="label">Can Support Single Adult</div><div class="value green">${singlePct}%</div></div>
+    <div class="stat-card"><div class="label">Can Support 1 Adult + 1 Child</div><div class="value yellow">${oneChildPct}%</div></div>
+    <div class="stat-card"><div class="label">Can Support Family of 4</div><div class="value red">${fam4Pct}%</div></div>
+  `;
+
+  // ── Table 3: Demographics ──
+  const demoGroups = [
+    { label: 'Sex', key: 'sex', order: ['Male','Female'] },
+    { label: 'Age', key: 'age_group', order: ['Under 25 Years','25-44 Years','45-64 Years','65+ Years'] },
+    { label: 'Race/Ethnicity', key: 'race_ethnicity', order: null },
+    { label: 'Full- or Part-time', key: 'fte_status', order: ['Full-time','Part-time'] },
+    { label: 'Marital Status', key: 'marital_status', order: ['Single/Divorced','Married'] }
+  ];
+  const demoRows = [];
+  demoGroups.forEach(g => {
+    demoRows.push({ header: true, cells: [g.label,'','','',''] });
+    const grp = groupBy(matched, g.key);
+    const keys = g.order ? g.order.filter(k => grp[k]) : Object.keys(grp).sort();
+    keys.forEach(k => {
+      const emps = grp[k];
+      const below = emps.filter(r => r._belowALICE);
+      const above = emps.filter(r => !r._belowALICE);
+      const pct = emps.length ? Math.round(below.length / emps.length * 100) : 0;
+      demoRows.push({ cells: [
+        { text: '  ' + k, indent: true },
+        emps.length,
+        pct + '%',
+        above.length ? '$' + Math.round(median(above.map(r=>r.annual_salary))).toLocaleString() : '—',
+        below.length ? '$' + Math.round(median(below.map(r=>r.annual_salary))).toLocaleString() : '—'
+      ]});
+    });
+  });
+  document.getElementById('table3Wrap').innerHTML = buildTable(
+    'Company Employees by Demographic Groups',
+    ['','Total','% Below ALICE','Median Salary Above','Median Salary Below'],
+    demoRows
+  );
+
+  // ── Table 4: Tenure ──
+  const tenureOrder = ['Less Than 1 Year','1-3 Years','4-6 Years','7-14 Years','15+ Years'];
+  const tenGrp = groupBy(matched, 'tenure_group');
+  const tenRows = tenureOrder.filter(t => tenGrp[t]).map(t => {
+    const emps = tenGrp[t];
+    const below = emps.filter(r => r._belowALICE);
+    const above = emps.filter(r => !r._belowALICE);
+    const pct = emps.length ? Math.round(below.length / emps.length * 100) : 0;
+    return { cells: [
+      '  ' + t, emps.length, pct + '%',
+      above.length ? '$' + Math.round(median(above.map(r=>r.annual_salary))).toLocaleString() : '—',
+      below.length ? '$' + Math.round(median(below.map(r=>r.annual_salary))).toLocaleString() : '—'
+    ]};
+  });
+  document.getElementById('table4Wrap').innerHTML = buildTable(
+    'Company Employees by Tenure',
+    ['Tenure','Total','% Below ALICE','Median Salary Above','Median Salary Below'],
+    tenRows
+  );
+
+  // ── Table 6: EEOC ──
+  const eeocGrp = groupBy(matched.filter(r => r.fte_status === 'Full-time' || r.fte_status === 'full-time'), 'eeoc_category');
+  const eeocAll = groupBy(matched, 'eeoc_category');
+  const eeocRows = Object.keys(eeocAll).sort().map(cat => {
+    const all = eeocAll[cat];
+    const ft = eeocGrp[cat] || [];
+    const pct = all.length ? Math.round(all.filter(r => r._belowALICE).length / all.length * 100) : 0;
+    const shortCat = cat.replace(/^\d+\.?\d*\s*/, '');
+    return { cells: [
+      shortCat, all.length,
+      ft.length ? '$' + median(ft.map(r=>r.hourly_wage)).toFixed(2) : '—',
+      pct + '%'
+    ]};
+  });
+  document.getElementById('table6Wrap').innerHTML = buildTable(
+    'Employment, Median Wages, and % Below ALICE by EEOC Category',
+    ['Occupation','Total','Median Hourly Wage (FT)','% Below ALICE'],
+    eeocRows
+  );
+
+  // ── Charts ──
+  renderCharts(matched);
+}
+
+// ══════════════════════════════════════
+// TABLE BUILDER
+// ══════════════════════════════════════
+function buildTable(title, headers, rows) {
+  let html = `<div style="font-weight:700;font-size:0.95rem;padding:0.6rem 0.8rem;background:var(--alice-blue);color:white;border-radius:8px 8px 0 0;">${title}</div>`;
+  html += '<table class="data-table"><thead><tr>';
+  headers.forEach(h => html += `<th>${h}</th>`);
+  html += '</tr></thead><tbody>';
+  rows.forEach(row => {
+    if (row.header) {
+      html += `<tr class="group-header"><td colspan="${headers.length}">${row.cells[0]}</td></tr>`;
+    } else {
+      const cells = row.cells || row;
+      html += '<tr>';
+      cells.forEach((c, i) => {
+        const val = typeof c === 'object' ? c.text : c;
+        const cls = (typeof c === 'object' && c.indent) ? ' class="indent"' : '';
+        html += `<td${cls}>${val}</td>`;
+      });
+      html += '</tr>';
+    }
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+// ══════════════════════════════════════
+// CHARTS
+// ══════════════════════════════════════
+const PALETTE = ['#2563EB','#8B5CF6','#EC4899','#10B981','#F59E0B','#EF4444','#06B6D4','#F97316','#6366F1','#14B8A6'];
+function chartDefaults() {
+  return { responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { labels: { color: '#8A95AB', font: { family: 'DM Sans', size: 11 } } },
+      tooltip: { backgroundColor: '#1A2744', borderColor: '#243352', borderWidth: 1, titleFont: { family: 'DM Sans' }, bodyFont: { family: 'DM Sans' } } },
+    scales: { x: { ticks: { color: '#8A95AB', font: { family: 'DM Sans', size: 11 } }, grid: { color: 'rgba(36,51,82,0.5)' } },
+      y: { ticks: { color: '#8A95AB', font: { family: 'DM Sans', size: 11 } }, grid: { color: 'rgba(36,51,82,0.5)' } } }
+  };
+}
+
+function renderCharts(matched) {
+  charts.forEach(c => c.destroy()); charts = [];
+  const grid = document.getElementById('chartGrid'); grid.innerHTML = '';
+
+  // 1. % Below ALICE by Demographic
+  const sexGrp = groupBy(matched, 'sex');
+  const ageGrp = groupBy(matched, 'age_group');
+  const raceGrp = groupBy(matched, 'race_ethnicity');
+  const allGroups = {};
+  Object.entries(sexGrp).forEach(([k,v]) => allGroups[k] = v);
+  ['Under 25 Years','25-44 Years','45-64 Years','65+ Years'].filter(a => ageGrp[a]).forEach(k => allGroups[k] = ageGrp[k]);
+  Object.entries(raceGrp).forEach(([k,v]) => allGroups[k] = v);
+
+  const gLabels = Object.keys(allGroups);
+  const gPcts = gLabels.map(l => { const e = allGroups[l]; return +(e.filter(r=>r._belowALICE).length/e.length*100).toFixed(1); });
+  addChart(grid, '% Below ALICE Threshold by Group', 'Demographic breakdown', 'demoChart', {
+    type: 'bar', data: { labels: gLabels, datasets: [{ label: '% Below ALICE', data: gPcts,
+      backgroundColor: gPcts.map(p => p > 40 ? '#EF444499' : p > 25 ? '#F59E0B99' : '#10B98199'),
+      borderColor: gPcts.map(p => p > 40 ? '#EF4444' : p > 25 ? '#F59E0B' : '#10B981'), borderWidth: 1, borderRadius: 4 }] },
+    options: { ...chartDefaults(), indexAxis: 'y', plugins: { ...chartDefaults().plugins, legend: { display: false } } }
+  }, true);
+
+  // 2. Wage distribution
+  const wages = matched.map(r => r.hourly_wage).filter(w => w > 0);
+  const avgThreshold = matched.reduce((s,r) => s + (r._threshold || 0), 0) / matched.length;
+  const avgThresholdHourly = avgThreshold / 2080;
+  const bins = [0, 10, 15, 20, 25, 30, 40, 50, 75, 120];
+  const binLabels = bins.slice(0,-1).map((b,i) => `$${b}-${bins[i+1]}`);
+  const binCounts = bins.slice(0,-1).map((b,i) => wages.filter(w => w >= b && w < bins[i+1]).length);
+  addChart(grid, 'Hourly Wage Distribution', 'Employee count per wage range', 'wageDistChart', {
+    type: 'bar', data: { labels: binLabels, datasets: [{ label: 'Employees', data: binCounts,
+      backgroundColor: '#2563EB99', borderColor: '#2563EB', borderWidth: 1, borderRadius: 4 }] },
+    options: { ...chartDefaults(), plugins: { ...chartDefaults().plugins, legend: { display: false } } }
+  });
+
+  // 3. % Below ALICE by Tenure
+  const tenGrp = groupBy(matched, 'tenure_group');
+  const tenOrder = ['Less Than 1 Year','1-3 Years','4-6 Years','7-14 Years','15+ Years'].filter(t => tenGrp[t]);
+  const tenPcts = tenOrder.map(t => { const e = tenGrp[t]; return +(e.filter(r=>r._belowALICE).length/e.length*100).toFixed(1); });
+  addChart(grid, '% Below ALICE by Tenure', 'Financial hardship by length of employment', 'tenureChart', {
+    type: 'line', data: { labels: tenOrder, datasets: [{ label: '% Below ALICE', data: tenPcts,
+      borderColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.15)', fill: true, tension: 0.4,
+      pointRadius: 6, pointBackgroundColor: '#8B5CF6', pointBorderColor: '#1A2744', pointBorderWidth: 2 }] },
+    options: chartDefaults()
+  });
+
+  // 4. EEOC median wages
+  const eeocGrp = groupBy(matched.filter(r => (r.fte_status||'').toLowerCase() === 'full-time'), 'eeoc_category');
+  const eeocKeys = Object.keys(eeocGrp).sort((a,b) => median(eeocGrp[b].map(r=>r.hourly_wage)) - median(eeocGrp[a].map(r=>r.hourly_wage)));
+  const eeocShort = eeocKeys.map(k => k.replace(/^\d+\.?\d*\s*/, ''));
+  addChart(grid, 'Median Hourly Wage by EEOC Category', 'Full-time employees only', 'eeocChart', {
+    type: 'bar', data: { labels: eeocShort, datasets: [{ label: 'Median Hourly Wage ($)', data: eeocKeys.map(k => +median(eeocGrp[k].map(r=>r.hourly_wage)).toFixed(2)),
+      backgroundColor: PALETTE.slice(0,eeocKeys.length).map(c=>c+'CC'), borderColor: PALETTE.slice(0,eeocKeys.length), borderWidth: 1, borderRadius: 4 }] },
+    options: { ...chartDefaults(), indexAxis: 'y' }
+  }, true);
+
+  // 5. Household budget support
+  const hhData = [
+    { label: 'Single Adult', pct: matched.filter(r => r.annual_salary >= r._threshold * HH_MULT.single).length / matched.length * 100 },
+    { label: '1 Adult + 1 Child', pct: matched.filter(r => r.annual_salary >= r._threshold * HH_MULT.oneChild).length / matched.length * 100 },
+    { label: 'Family of 4', pct: matched.filter(r => r.annual_salary >= r._threshold * HH_MULT.family4).length / matched.length * 100 }
+  ];
+  addChart(grid, 'Jobs That Can Support Household Survival Budget', 'By household type', 'hhChart', {
+    type: 'bar', data: { labels: hhData.map(h=>h.label), datasets: [{ label: '% of Jobs', data: hhData.map(h=>+h.pct.toFixed(1)),
+      backgroundColor: ['#10B98199','#F59E0B99','#EF444499'], borderColor: ['#10B981','#F59E0B','#EF4444'], borderWidth: 1, borderRadius: 6 }] },
+    options: chartDefaults()
+  });
+}
+
+function addChart(container, title, subtitle, id, config, fullWidth) {
+  const card = document.createElement('div');
+  card.className = 'chart-card' + (fullWidth ? ' full-width' : '');
+  card.innerHTML = `<h3>${title}</h3><div class="subtitle">${subtitle}</div><canvas id="${id}"></canvas>`;
+  container.appendChild(card);
+  charts.push(new Chart(card.querySelector('canvas').getContext('2d'), config));
+}
+
+// ══════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════
+function groupBy(arr, key) { const m = {}; arr.forEach(r => { const k = r[key] || 'Unknown'; (m[k] = m[k] || []).push(r); }); return m; }
+function median(arr) { if (!arr.length) return 0; const s = [...arr].sort((a,b) => a - b); const mid = Math.floor(s.length / 2); return s.length % 2 ? s[mid] : (s[mid-1] + s[mid]) / 2; }
+function showStatus(msg, type) { statusEl.textContent = msg; statusEl.className = 'status ' + type; }
+function showLoading(v, msg) { document.getElementById('loading').classList.toggle('visible', v); if (msg) document.getElementById('loadingMsg').textContent = msg; }
+
+// ══════════════════════════════════════
+// EXPORT
+// ══════════════════════════════════════
+async function exportPDF() {
+  showLoading(true, 'Generating PDF report...');
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const content = document.getElementById('reportContent');
+    const canvas = await html2canvas(content, { backgroundColor: '#0B1222', scale: 1.5, logging: false, useCORS: true,
+      windowWidth: 1200, scrollY: -window.scrollY });
+    const imgData = canvas.toDataURL('image/png');
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const imgWidth = pageWidth - 20;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    let heightLeft = imgHeight;
+    let position = 10;
+
+    pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+    heightLeft -= (pageHeight - 20);
+    while (heightLeft > 0) {
+      position = -(pageHeight - 20) * (Math.ceil((imgHeight - heightLeft) / (pageHeight - 20)));
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= (pageHeight - 20);
+    }
+    pdf.save(`ALICE_Work_Report_${getCompanyName().replace(/\s+/g,'_')}.pdf`);
+  } catch (e) { console.error(e); showStatus('PDF export error. Try downloading charts instead.', 'error'); }
+  showLoading(false);
+}
+
+async function exportAllPNG() {
+  const cards = document.querySelectorAll('.chart-card');
+  for (const card of cards) {
+    const title = card.querySelector('h3').textContent.replace(/[^a-zA-Z0-9]/g, '_');
+    try {
+      const canvas = await html2canvas(card, { backgroundColor: '#131D33', scale: 2, logging: false });
+      const link = document.createElement('a'); link.download = `ALICE_${title}.png`; link.href = canvas.toDataURL('image/png'); link.click();
+      await new Promise(r => setTimeout(r, 300));
+    } catch (e) { console.error(e); }
+  }
+}
+
+function exportCSVSummary() {
+  if (!data) return;
+  const matched = data.filter(r => r._threshold);
+  const n = matched.length;
+  const belowCount = matched.filter(r => r._belowALICE).length;
+  let csv = `ALICE@Work Report - ${getCompanyName()}\n\n`;
+  csv += `Metric,Value\nTotal Employees,${n}\nMedian Hourly Wage,$${median(matched.map(r=>r.hourly_wage)).toFixed(2)}\n`;
+  csv += `Below ALICE Threshold,${belowCount}\n% Below ALICE,${(belowCount/n*100).toFixed(1)}%\n\n`;
+  csv += 'Demographic Group,Subgroup,Total,% Below ALICE,Median Salary Above,Median Salary Below\n';
+  ['sex','age_group','race_ethnicity','fte_status','marital_status','tenure_group'].forEach(key => {
+    const grp = groupBy(matched, key);
+    Object.entries(grp).forEach(([k, emps]) => {
+      const below = emps.filter(r => r._belowALICE);
+      const above = emps.filter(r => !r._belowALICE);
+      csv += `${key},"${k}",${emps.length},${(below.length/emps.length*100).toFixed(1)}%,`;
+      csv += `$${above.length?Math.round(median(above.map(r=>r.annual_salary))):0},`;
+      csv += `$${below.length?Math.round(median(below.map(r=>r.annual_salary))):0}\n`;
+    });
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a'); link.download = `ALICE_Report_${getCompanyName().replace(/\s+/g,'_')}.csv`;
+  link.href = URL.createObjectURL(blob); link.click();
+}
+
+function resetApp() {
+  charts.forEach(c => c.destroy()); charts = []; data = null;
+  document.getElementById('dashboard').classList.remove('visible');
+  document.getElementById('chartGrid').innerHTML = '';
+  document.getElementById('statsRow').innerHTML = '';
+  statusEl.style.display = 'none';
+  fileInput.value = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
